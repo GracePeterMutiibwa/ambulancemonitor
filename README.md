@@ -1,2 +1,2 @@
 # ambulancemonitor
-A simple server and website for an ambulance system
+A simple server and website for an ambulance monitoring system
