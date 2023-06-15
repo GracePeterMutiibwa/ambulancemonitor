@@ -1,0 +1,122 @@
+{% extends 'ambuadmin/homelayout.html' %}
+
+{% block showcase %}
+    
+    <!-- hospital section -->
+    <div class="register-control">
+        <!-- hospital register -->
+        <div class="row" id="register-panel">
+
+            <!-- Area Chart -->
+            <div class="col-xl-10 w-100">
+                <div class="card shadow mb-4">
+                    <!-- Card Header - Dropdown -->
+                    <div
+                        class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                        <h6 class="m-0 font-weight-bold text-primary">New Hospital Detail</h6>
+                        
+                    </div>
+
+
+                    <!-- Card Body -->
+                    <div class="card-body">
+                        <form action="{% url 'hosp-register' %}" method="post">
+                            {% csrf_token %}
+                            <div class="input-group mb-3">
+                                <span class="input-group-text" id="basic-addon3">Hospital Name</span>
+                                <input type="text" class="form-control" name="hospital-name" id="basic-url"aria-describedby="basic-addon3" required>
+                            </div>
+        
+                            <div class="my-2 d-flex justify-content-center">
+                                <button class="btn btn-success btn-icon-split" type="submit">
+                                    <span class="icon text-white-50">
+                                        <i class="fas fa-check"></i>
+                                    </span>
+                                    <span class="text">ADD TO DATABASE</span>
+                                </button>
+                            </div>
+                            
+                        </form>
+                        
+                        
+                    </div>
+                </div>
+            </div>
+
+
+        </div>
+
+        <!--hospital table section -->
+        <div class="row" id="manage-panel">
+
+            <!-- Area Chart -->
+            <div class="w-100">
+                <div class="card shadow mb-4">
+                    <!-- Card Header - Dropdown -->
+                    <div
+                        class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                        <h6 class="m-0 font-weight-bold text-primary">Available Hospitals</h6>
+                        
+                    </div>
+
+                    <!-- Card Body -->
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+                                <thead>
+                                    <tr>
+                                        <th>Hospital Name</th>
+                                        <th>Asset No.</th>
+                                        <th>User No.</th>
+                                        <th>Operations Count</th>
+                                        <th>Manage</th>
+                                        <th>View History</th>
+                                    </tr>
+                                </thead>
+                                <tfoot>
+                                    <tr>
+                                        <th>Hospital Name</th>
+                                        <th>Asset No.</th>
+                                        <th>User No.</th>
+                                        <th>Operations Count</th>
+                                        <th>Manage</th>
+                                        <th>View History</th>
+                                    </tr>
+                                </tfoot>
+                                <tbody>
+                                   {% for eachHospital in hospitals %}
+
+                                    <tr>
+                                        <td>{{ eachHospital.name }}</td>
+                                        <td>{{ eachHospital.assets }}</td>
+                                        <td>{{ eachHospital.users }}</td>
+                                        <td>{{ eachHospital.operations }}</td>
+                                        <td class="bg-danger text-center">
+                                            <a href="{% url 'wipe-hospital' eachHospital.id %}" class="btn btn-danger btn-circle">
+                                                <i class="fas fa-trash text-white"></i>
+
+                                            </a>
+                                        </td>
+                                        <td class="bg-success text-center">
+                                            <a href="#" class="btn btn-success btn-circle">
+                                                <i class="fas fa-info-circle text-white"></i>
+
+                                            </a>
+                                        </td>
+                                    </tr>
+
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+
+    </div>
+
+{% endblock %}

@@ -1,0 +1,118 @@
+{% extends 'ambuadmin/homelayout.html' %}
+
+{% block showcase %}
+    <div class="user-section">
+
+        <div class="row">
+            <div class="col-xl-10 w-100">
+                    <div class="card shadow mb-4">
+                        <!-- Card Header - Dropdown -->
+                        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-primary">Add System Users</h6>
+                        </div>
+
+                        <!-- Card Body -->
+                        <div class="card-body">
+                            <form action="{% url 'register-incharge' %}" method="post">
+                                {% csrf_token %}
+                                <div class="input-group mb-3">
+                                    <label class="input-group-text" for="inputGroupSelect01">Hospital</label>
+                                    <select class="form-select" id="inputGroupSelect01" name="hospital-id" required>
+                                        {% for hospitalName in hospitals %}
+                                            <option value="{{ hospitalName.id }}">{{ hospitalName.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+        
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text" id="basic-addon3">User Email</span>
+                                    <input type="email" name="user-email" class="form-control" id="basic-url"
+                                    placeholder="user email address" aria-describedby="basic-addon3" required>
+                                </div>
+    
+                                <div class="input-group mb-3">
+                                <span class="input-group-text" id="basic-addon3">Temporary Password</span>
+                                <input type="text" name="user-key" autocomplete="off" minlength="4" class="form-control" id="basic-url" placeholder="assign temporary password" aria-describedby="basic-addon3" required>
+                                </div>
+    
+                                <div class="my-2 d-flex justify-content-center">
+                                    {% if hospitals %}
+                                        <button class="btn btn-success btn-icon-split" type="submit">
+                                    {% else %}
+                                        <button class="btn btn-success btn-icon-split" type="submit" disabled>
+
+                                    {% endif %}
+
+                                    <span class="icon text-white-50">
+                                        <i class="fas fa-check"></i>
+                                    </span>
+                                    <span class="text">GRANT ACCESS</span>
+                                    </button>
+                                </div>
+        
+                            </form>
+                        </div>
+                    </div>
+            </div>
+
+        </div>
+
+        <!-- Available users section -->
+        <div class="row" id="manage-panel">
+
+            <div class="w-100">
+                <div class="card shadow mb-4">
+                    <!-- Card Header - Dropdown -->
+                    <div
+                        class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                        <h6 class="m-0 font-weight-bold text-primary">Available Users</h6>
+                        
+                    </div>
+
+                    <!-- Card Body -->
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+                                <thead>
+                                    <tr>
+                                        <th>User Email</th>
+                                        <th>Hospital.</th>
+                                        <th>Date Created.</th>
+                                        <th>Manage</th>
+                                    </tr>
+                                </thead>
+                                <tfoot>
+                                    <tr>
+                                        <th>User Email</th>
+                                        <th>Hospital.</th>
+                                        <th>Date Created.</th>
+                                        <th>Manage</th>
+                                    </tr>
+                                </tfoot>
+                                <tbody>
+                                    {% for eachUser in users %}
+                                        <tr>
+                                            <td>{{ eachUser.email }}</td>
+                                            <td>{{ eachUser.hospital }}</td>
+                                            <td>{{ eachUser.date }}</td>
+                                            <td class="bg-danger text-center">
+                                                <a href="{% url 'delete-user' eachUser.id %}" class="btn btn-danger btn-circle">
+                                                    <i class="fas fa-trash text-white"></i>
+
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+        
+    </div>
+
+{% endblock %}
