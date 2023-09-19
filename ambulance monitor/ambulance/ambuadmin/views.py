@@ -2,9 +2,9 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.models import User
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from .models import Hospital, HospitalOfficers, AmbulanceAsset
+from .models import Hospital, HospitalOfficers, AmbulanceAsset, AssetRequest, OperationHistory
 from django.http import JsonResponse
-
+import uuid
 
 
 
@@ -42,7 +42,7 @@ def loginView(request):
             # if its a valid user redirect them to home page after login
             login(request, userObject)
 
-            print("User Logged in:", userObject.username)
+            # print("User Logged in:", userObject.username)
 
             return redirect("homepage")
 
@@ -137,13 +137,34 @@ def userManagementView(request):
 
     return render(request, "ambuadmin/user-control.html", context=nameContext)
 
-@login_required(login_url="loginpage")
-def requestsView(request):
-    return render(request, "ambuadmin/request-control.html")
 
 @login_required(login_url="loginpage")
 def fleetHistoryView(request):
-    return render(request, "ambuadmin/fleet-history.html")
+    # get  history data
+    historyData = getAvailableHistory()
+
+    return render(request, "ambuadmin/fleet-history.html", context=dict(
+        history = historyData
+    ))
+
+
+
+def getAvailableHistory():
+    # get the history present
+    allHistory = OperationHistory.objects.all()
+
+    historyOBjects = [
+        dict(
+            service_date = eachHistoryObject.serviceDate,
+            requestor = eachHistoryObject.requestingHospital.hospitalName,
+            license = eachHistoryObject.assetRequestedLicensePlate,
+            personnel_email = eachHistoryObject.controlPersonnel,
+            request_time = eachHistoryObject.requestTime.strftime("%H:%M %p")
+        
+        ) for eachHistoryObject in allHistory
+    ]
+
+    return historyOBjects
 
 
 def checkHospitalValidity(nameOfHospital):
@@ -169,7 +190,13 @@ def registerHospital(request):
 
     if isValid is True:
         # record the hospital name
-        hospitalObject = Hospital(hospitalName=submittedName)
+        # get a new id
+        uniqueId = uuid.uuid4()
+
+        hospitalObject = Hospital(
+            hospitalName=submittedName,
+            hospitalUniqueId=uniqueId
+            )
 
         # save the object
         hospitalObject.save()
@@ -264,47 +291,261 @@ def validateHandShakeUser(requestingEmail, requestingPassword):
 
     # determine if user is legitimate
     if userObject and userObject.employeePassword == requestingPassword:
-        return True, userObject.employeeHospital.id
+        return True, (userObject.employeeHospital.id, userObject.employeeHospital.hospitalName, userObject.employeeHospital.hospitalUniqueId, userObject.employeeHospital)
     
     else:
         return False, None
 
 
 def getAvailableAssets(idToIgnore):
-    # get
-    assets = AmbulanceAsset.objects.all()
+    # get the owner hospital
+    ownerHospital = Hospital.objects.get(pk=idToIgnore)
 
-    # names of assets to ignore
-    assetNamesToFlag = []
+    # get
+    assets = AmbulanceAsset.objects.filter(serviceStatus=False)
 
     # idle
     idleAssets = []
 
     # filter
     for eachAsset in assets:
-        if (eachAsset.assetOwner.id != idToIgnore and eachAsset.serviceStatus is False):
+        if (eachAsset.assetOwner != ownerHospital):
             # store the details
             idleAssets.append({
                 eachAsset.assetLicensePlate: (
                                                 eachAsset.assetOwner.hospitalName,
                                                 eachAsset.assetCategory,
-                                                eachAsset.assetSittingCapacity
+                                                eachAsset.assetSittingCapacity,
+                                                eachAsset.pk
                                             )
             })
-
-        else:
-            # record the license plate
-            assetNamesToFlag.append(
-                    (
-                        eachAsset.assetLicensePlate,
-                        eachAsset.id
-                    )
-                )
-            
-
     
-    return idleAssets, assetNamesToFlag
+    return idleAssets
 
+
+def getListOfRequests(hospitalObject, requestStatus):
+    # get pending requets
+    pendingRequests = hospitalObject.sent_requests.filter(requestStatus=requestStatus)
+
+    return [(requestObject.assetId, str(requestObject)) for requestObject in pendingRequests if requestObject.requestStatus is True]
+
+def getListOfIncomingRequests(hospitalObject):
+    # get the requests
+    incomingRequests = hospitalObject.incoming_requests.all()
+
+    return {str(requestObject): requestObject.assetId for requestObject in incomingRequests if requestObject.requestStatus is False}
+
+def getListOfLentRequests(hospitalObject):
+    # get the requests
+    incomingRequests = hospitalObject.incoming_requests.all()
+
+    return {str(requestObject): requestObject.assetId for requestObject in incomingRequests if requestObject.requestStatus is True}
+
+def getListOfAcceptedRequests(hospitalObject):
+    # get the requests
+    acceptedRequests = hospitalObject.sent_requests.all()
+
+    return {str(requestObject): requestObject.assetId for requestObject in acceptedRequests if requestObject.requestStatus is True}
+
+
+def getAssetDetail(request):
+    # get the id of the selected asset
+    assetId = request.GET.get('asset-id')
+
+    requestType = request.GET.get('type')
+
+    # get the asset
+    assetToView = AmbulanceAsset.objects.get(pk=assetId)
+    
+    if requestType == 'normal':
+        return JsonResponse(dict(
+            message = str(assetToView)
+        ))
+    
+    else:
+        # get the asset request for that asset
+        requestInstance = AssetRequest.objects.get(assetId=assetId)
+
+        # get the assset itself
+        requestedAsset = AmbulanceAsset.objects.get(pk=assetId)
+
+        return JsonResponse(dict(
+            message = f"Requestor:{requestInstance.assetRequestor.hospitalName}\nAsset Category:{requestedAsset.assetCategory}\nAsset Name:{requestedAsset.assetLicensePlate}\nAsset Capacity:{requestedAsset.assetSittingCapacity}"
+        ))
+    
+
+def getListOfDeletableAssets(hospitalObject):
+    # reference
+    referenceList = []
+
+    all_free_assets = hospitalObject.available_assets.filter(serviceStatus=False)
+
+    for eachAsset in all_free_assets:
+            # record the license plate
+        referenceList.append(
+                (
+                    eachAsset.assetLicensePlate,
+                    eachAsset.id,
+                    eachAsset.assetOwner.hospitalUniqueId
+                )
+            )
+    return referenceList
+
+
+
+def provisionRequestedAsset(request):
+    # get the id and the response
+    assetId = request.GET.get('asset-id')
+
+    requestReply = request.GET.get('reply')
+
+    # update the asset and request data
+    ownerHospital = updateAssetRequestData(assetId, requestReply)
+
+    # get the updated list
+    updatedIncomingLists = getListOfIncomingRequests(ownerHospital)
+
+    # get a list of lent out assets
+    lentAssets = getListOfLentRequests(ownerHospital)
+
+    # get free assets
+    own_free_assets = getListOfDeletableAssets(ownerHospital)
+
+    return JsonResponse(dict(
+        updated = updatedIncomingLists,
+        lent = lentAssets,
+        own = own_free_assets
+    ))
+
+
+def updateAssetRequestData(assetId, requestReply):
+    # get the asset request
+    requestInstance = AssetRequest.objects.get(assetId=assetId)
+
+    # delete the request if the reply is no
+    if requestReply is False:
+        # delete the request
+        requestInstance.delete()
+
+    else:
+        # update the status
+        requestInstance.requestStatus = requestReply
+
+        # update the status
+        requestInstance.save()
+
+    # get the assset itself
+    requestedAsset = AmbulanceAsset.objects.get(pk=assetId)
+
+    # update the response / reply
+    requestedAsset.serviceStatus = requestReply
+
+    # save the state of the object
+    requestedAsset.save()
+
+    # get the object of the owner hospital
+    return requestedAsset.assetOwner
+
+
+def makeAssetAvailable(assetId):
+    # get the ambulance
+    requestedAsset = AmbulanceAsset.objects.get(pk=assetId)
+
+    # nake the asset avilable
+    requestedAsset.serviceStatus = False
+
+    # save the new provile
+    requestedAsset.save()
+
+    return requestedAsset.assetOwner
+
+def releaseAmbulanceAsset(request):
+    # get the id and the incharge
+    assetId = request.GET.get('asset-id')
+
+    inchargePersonell = request.GET.get('incharge')
+
+    # get the hospital
+    assetRequestInstance =  AssetRequest.objects.get(assetId=assetId)
+
+    # get the requestor
+    assetRequestor = assetRequestInstance.assetRequestor
+
+    # get the license plate
+    assetLicensePlate = str(assetRequestInstance)
+
+    # create an instance of history
+    historyRecord = OperationHistory(
+        requestingHospital=assetRequestor,
+        assetRequestedLicensePlate=assetLicensePlate,
+        controlPersonnel=inchargePersonell
+        )
+
+    # save the history record
+    historyRecord.save()
+
+    # approve
+    hospitalObject = makeAssetAvailable(assetId=assetId)
+
+    # after clear the request
+    assetRequestInstance.delete()
+
+    # update the list
+    newAcceptedList = getListOfAcceptedRequests(hospitalObject)
+
+    # get update list of present assets
+    idleAssets = getAvailableAssets(assetRequestor.pk)
+
+    # return the updated list
+    return JsonResponse(dict(
+        updated = newAcceptedList,
+        idle = idleAssets
+    ))
+
+
+
+def createHistoryDetail(historyObject):
+    # contruct a display string
+    displayString = "On {date_object}\n--------------------------------\nRequestor:{hospital}\nLicense Plate:{plate}\nIncharge:{incharge}".format_map(
+        dict(
+            date_object=str(historyObject),
+            hospital=historyObject.requestingHospital.hospitalName,
+            plate=historyObject.assetRequestedLicensePlate,
+            incharge=historyObject.controlPersonnel
+            )
+        )
+    
+    return displayString
+
+def getOperationHistory(historyOwner, filterObject=None):
+    # get the 
+    historyObjects = historyOwner.related_hospital.filter(serviceDate=filterObject) if filterObject else historyOwner.related_hospital.all()
+
+    # create related view data items
+    # 12-24-2023 At 12:36:PM : (1, 2)
+    historyData = {
+            str(eachHistoryObject): (eachHistoryObject.pk, eachHistoryObject.serviceDate.strftime('%d-%m-%Y'))
+
+        for eachHistoryObject in historyObjects} 
+    
+
+    return historyData
+
+def fetchHistoryDetail(request):
+    # get the data to use
+    historyId = request.GET.get('record-id')
+
+    # get the history object
+    historyObject = OperationHistory.objects.get(pk=historyId)
+
+    # get the attached details
+    attachedDetails = createHistoryDetail(historyObject)
+
+    return JsonResponse(
+        dict(
+            details = attachedDetails
+            )
+    )
 
 def manageHandShake(request):
     # error
@@ -319,16 +560,38 @@ def manageHandShake(request):
     sentEmail, sentPassword = sentData['email'], sentData['password']
 
     # validate
-    userStatus, hospitalId = validateHandShakeUser(sentEmail, sentPassword)
+    userStatus, hospitalOBject = validateHandShakeUser(sentEmail, sentPassword)
 
     if userStatus is True:
         # get free assets
-        idleAssets, excludeList = getAvailableAssets(hospitalId)
+        idleAssets = getAvailableAssets(hospitalOBject[0])
+
+        # own assets
+        excludeList = getListOfDeletableAssets(hospitalOBject[3])
+
+        # get a list of pending and accepted requests
+        pendingRequests = getListOfRequests(hospitalOBject[3], False)
+
+        acceptedRequests = getListOfRequests(hospitalOBject[3], True)
+
+        incomingRequests = getListOfIncomingRequests(hospitalOBject[3])
+
+        lentAssets = getListOfLentRequests(hospitalOBject[3])
+
+        # get the history objects
+        historyData = getOperationHistory(hospitalOBject[3])
 
         # get details 
         handShakeResponse = {
+            'hospital': hospitalOBject[1],
             'assets': idleAssets,
-            'avoid': excludeList
+            'avoid': excludeList,
+            'tag': hospitalOBject[2],
+            'pending': pendingRequests,
+            'accepted': acceptedRequests,
+            'incoming': incomingRequests,
+            'lent': lentAssets,
+            'history': historyData
         }
 
     else:
@@ -338,11 +601,20 @@ def manageHandShake(request):
     return JsonResponse(handShakeResponse)
 
 
-def getAttachedHospital(requestEmail):
+def getAttachedHospitalIncharge(requestEmail):
     # get hospital details
-    hospitalObject = HospitalOfficers.objects.filter(employeeEmail=requestEmail).first()
+    inchargeObject = HospitalOfficers.objects.filter(employeeEmail=requestEmail).first()
 
-    return hospitalObject
+    return inchargeObject
+
+
+def deriveHospitalFromIncharge(requestEmail):
+    # get the incharge
+    inchargeObject = getAttachedHospitalIncharge(requestEmail)
+    
+    return inchargeObject.employeeHospital
+
+
     
 
 def writeAssetDetail(request):
@@ -361,14 +633,17 @@ def writeAssetDetail(request):
 
 
     # get the hospital
-    hospitalIncharge = getAttachedHospital(accessEmail)
+    hospitalIncharge = getAttachedHospitalIncharge(accessEmail)
 
-    print("hospital Name:", hospitalIncharge.employeeHospital.hospitalName)
+    # print("hospital Name:", hospitalIncharge.employeeHospital.hospitalName)
 
     if hospitalIncharge:
+        # get the hospital
+        attachedHospital = hospitalIncharge.employeeHospital
+
         # register
         ambulanceObject = AmbulanceAsset(
-            assetOwner=hospitalIncharge.employeeHospital,
+            assetOwner=attachedHospital,
             assetCategory=assetCategory,
             assetLicensePlate=assetLicensePlate,
             assetSittingCapacity=assetCapacity,
@@ -378,7 +653,10 @@ def writeAssetDetail(request):
         # save the object
         ambulanceObject.save()
 
-        replyMessage =  'asset registered'
+        # get the associated primary key
+        associatedPrimaryKey = ambulanceObject.pk
+
+        replyMessage =  [associatedPrimaryKey, attachedHospital.hospitalUniqueId]
 
     else:
         replyMessage = 'seek authentication'
@@ -387,5 +665,68 @@ def writeAssetDetail(request):
     return JsonResponse({
         'message': replyMessage
     })
+
+
+def wipeAssetFromDatabase(request):
+    # get the data
+    assetId = request.GET.get("asset-id")
+
+    # get the asset itself
+    ambulanceObject = AmbulanceAsset.objects.get(pk=assetId)
+
+    # delete any associated requests for the asset
+    ambulanceObject.assetOwner.incoming_requests.filter(assetId=assetId).delete()
+
+    # print("Deleted the asset!")
+
+    # finally delete the asset itself
+    ambulanceObject.delete()
+
+    return JsonResponse({
+        'message': 'wiped'
+    })
+
+
+def recordAssetRequest(request):
+    # get the asset ig
+    assetId = request.GET.get('requested-id')
+
+    # get the asset
+    requestedAsset = AmbulanceAsset.objects.get(pk=assetId)
+
+    # get the incharge email 
+    inchargeEmail = request.GET.get('personnel-email')
+
+    # owner
+    ownerHospital = requestedAsset.assetOwner
+
+    # requestor
+    requestingHospital = deriveHospitalFromIncharge(inchargeEmail)
+
+    # alert that the asset is booked now
+    # requestedAsset.serviceStatus = True
+
+    # recordAssetRequest.save()
+
+
+    # create the request
+    assetRequest = AssetRequest(
+        assetId=assetId,
+        assetOwner=ownerHospital,
+        assetRequestor=requestingHospital,
+        requestStatus=False
+    )
+
+    # save the request
+    assetRequest.save()
+
+    # get the request id
+    # requestId = assetRequest.pk
+
+    return JsonResponse({
+        'message': 'sent'
+    })
+
+
 
 
